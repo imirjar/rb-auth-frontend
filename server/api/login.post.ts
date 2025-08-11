@@ -1,34 +1,45 @@
-import { defineEventHandler, readBody } from 'h3';
+import { LoginRequestBody } from '@@/server/models/auth/dto/Login.request';
+import { AuthService } from '@@/server/services/auth.service';
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<LoginRequest>(event); // Типизируем входные данные
+  const body = await readBody<LoginRequestBody>(event);
 
-  console.log(`##### ---${body}`)
+  // Валидация
+  if (!body?.login || !body?.password) {
+    throw createError({
+      statusCode: 400,
+      message: 'Логин и пароль обязательны',
+    });
+  }
 
   try {
-    const response = await $fetch<LoginResponse>('http://auth.redbeaver.ru/login', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' },
+    const response = await AuthService.login(body);
+
+    // Устанавливаем куки
+    setCookie(event, 'auth-token', response.access_token, {
+      maxAge: 60 * 60 * 24 * 7,
+      sameSite: 'strict',
+      path: '/',
     });
 
-    return { token: response.token }; // Теперь TypeScript знает структуру `response`
-  } catch (error) {
+    if (response.refresh_token) {
+      setCookie(event, 'refresh_token', response.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24 * 30,
+        sameSite: 'strict',
+        path: '/',
+      });
+    }
+
+    return { 
+      success: true,
+      expires_in: response.expires_in,
+    };
+  } catch (error: any) {
     throw createError({
       statusCode: 401,
-      message: 'Login failed',
+      message: error.message || 'Неверный логин или пароль',
     });
   }
 });
-
-// Тип для запроса на авторизацию
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-// Тип для ответа после авторизации
-export interface LoginResponse {
-  token: string;
-  expiresIn?: number;
-}

@@ -1,31 +1,15 @@
-import { defineEventHandler, getHeader } from 'h3';
+import { AuthService } from '@@/server/services/auth.service';
+// ~
 
 export default defineEventHandler(async (event) => {
-  const authHeader = getHeader(event, 'Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw createError({ statusCode: 401, message: 'Unauthorized' });
-  }
-
-  const token = authHeader.split(' ')[1];
+  const token = event.context.token; // Получаем токен из middleware
   
   try {
-    const user = await $fetch<UserData>('http://auth.redbeaver.ru/user', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    return user;
-  } catch (error) {
+    return await AuthService.getUserByToken(token);
+  } catch (error: any) {
     throw createError({
       statusCode: 403,
-      message: 'Invalid token',
+      message: error.message || 'Invalid token',
     });
   }
 });
-
-
-// Тип для данных пользователя
-export interface UserData {
-  id: string;
-  email: string;
-  name?: string;
-}
